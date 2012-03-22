@@ -10,8 +10,12 @@
  * https://github.com/robbiehanson/CocoaLumberjack/wiki/GettingStarted
 **/
 
-#if ! __has_feature(objc_arc)
-#warning This file must be compiled with ARC. Use -fobjc-arc flag (or convert project to ARC).
+#if !__has_feature(objc_arc) && !defined(__OBJC_GC__)
+#   if defined (__i386__)
+#       warning This file must be compiled with GC. Use the -fobjc-gc flag.
+#   else
+#       warning This file must be compiled with ARC. Use the -fobjc-arc flag (or convert project to ARC).
+#   endif
 #endif
 
 

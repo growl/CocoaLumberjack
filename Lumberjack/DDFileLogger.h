@@ -173,7 +173,7 @@
 	__strong id <DDLogFileManager> logFileManager;
 	
 	DDLogFileInfo *currentLogFileInfo;
-	NSFileHandle *currentLogFileHandle;
+    NSFileHandle *currentLogFileHandle;
 	
 	dispatch_source_t rollingTimer;
 	

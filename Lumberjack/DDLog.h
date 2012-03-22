@@ -261,6 +261,9 @@ NSString *DDExtractFileNameWithoutExtension(const char *filePath, BOOL copy);
 
 + (void)removeAllLoggers;
 
++ (void)queueLogMessage:(DDLogMessage *)logMessage asynchronously:(BOOL)asyncFlag;
+
+
 /**
  * Registered Dynamic Logging
  * 

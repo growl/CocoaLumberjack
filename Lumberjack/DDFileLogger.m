@@ -15,8 +15,12 @@
  * https://github.com/robbiehanson/CocoaLumberjack/wiki/GettingStarted
 **/
 
-#if ! __has_feature(objc_arc)
-#warning This file must be compiled with ARC. Use -fobjc-arc flag (or convert project to ARC).
+#if !__has_feature(objc_arc) && !defined(__OBJC_GC__)
+#   if defined (__i386__)
+#       warning This file must be compiled with GC. Use the -fobjc-gc flag.
+#   else
+#       warning This file must be compiled with ARC. Use the -fobjc-arc flag (or convert project to ARC).
+#   endif
 #endif
 
 // We probably shouldn't be using DDLog() statements within the DDLog implementation.
@@ -122,9 +126,14 @@
 {
 	NSLogVerbose(@"DDLogFileManagerDefault: deleteOldLogFiles");
 	
-	NSArray *sortedLogFileInfos = [self sortedLogFileInfos];
-	
 	NSUInteger maxNumLogFiles = self.maximumNumberOfLogFiles;
+	if (maxNumLogFiles == 0)
+	{
+		// Unlimited - don't delete any log files
+		return;
+	}
+	
+	NSArray *sortedLogFileInfos = [self sortedLogFileInfos];
 	
 	// Do we consider the first file?
 	// We are only supposed to be deleting archived files.
@@ -156,16 +165,13 @@
 	}
 	
 	NSUInteger i;
-	for (i = 0; i < count; i++)
+	for (i = maxNumLogFiles; i < count; i++)
 	{
-		if (i >= maxNumLogFiles)
-		{
-			DDLogFileInfo *logFileInfo = [sortedArchivedLogFileInfos objectAtIndex:i];
-			
-			NSLogInfo(@"DDLogFileManagerDefault: Deleting file: %@", logFileInfo.fileName);
-			
-			[[NSFileManager defaultManager] removeItemAtPath:logFileInfo.filePath error:nil];
-		}
+		DDLogFileInfo *logFileInfo = [sortedArchivedLogFileInfos objectAtIndex:i];
+		
+		NSLogInfo(@"DDLogFileManagerDefault: Deleting file: %@", logFileInfo.fileName);
+		
+		[[NSFileManager defaultManager] removeItemAtPath:logFileInfo.filePath error:nil];
 	}
 }
 
@@ -366,12 +372,12 @@
 	CFUUIDRef uuid = CFUUIDCreate(NULL);
 	
 	CFStringRef fullStr = CFUUIDCreateString(NULL, uuid);
-	NSString *result = (__bridge_transfer NSString *)CFStringCreateWithSubstring(NULL, fullStr, CFRangeMake(0, 6));
+	CFStringRef shortStr = CFStringCreateWithSubstring(NULL, fullStr, CFRangeMake(0, 6));
 	
 	CFRelease(fullStr);
 	CFRelease(uuid);
-	
-	return result;
+    
+	return CFBridgingRelease(shortStr);
 }
 
 /**
@@ -413,11 +419,23 @@
 
 - (id)init
 {
-	if((self = [super init]))
+	return [self initWithDateFormatter:nil];
+}
+
+- (id)initWithDateFormatter:(NSDateFormatter *)aDateFormatter
+{
+	if ((self = [super init]))
 	{
-		dateFormatter = [[NSDateFormatter alloc] init];
-		[dateFormatter setFormatterBehavior:NSDateFormatterBehavior10_4];
-		[dateFormatter setDateFormat:@"yyyy/MM/dd HH:mm:ss:SSS"];
+		if (aDateFormatter)
+		{
+			dateFormatter = aDateFormatter;
+		}
+		else
+		{
+			dateFormatter = [[NSDateFormatter alloc] init];
+			[dateFormatter setFormatterBehavior:NSDateFormatterBehavior10_4]; // 10.4+ style
+			[dateFormatter setDateFormat:@"yyyy/MM/dd HH:mm:ss:SSS"];
+		}
 	}
 	return self;
 }
@@ -458,17 +476,26 @@
 	return self;
 }
 
+#if defined (__OBJC__GC__)
+#   warning currentLogFileHandle may be finalized before us, and thus not synchronized
+- (void)finalize
+#else
 - (void)dealloc
+#endif
 {
-	[currentLogFileHandle synchronizeFile];
-	[currentLogFileHandle closeFile];
-	
-	if (rollingTimer)
-	{
-		dispatch_source_cancel(rollingTimer);
-		dispatch_release(rollingTimer);
-		rollingTimer = NULL;
-	}
+    if (currentLogFileHandle) {
+        [currentLogFileHandle synchronizeFile];
+        [currentLogFileHandle closeFile];
+    }
+    
+    if (rollingTimer) {
+        dispatch_source_cancel(rollingTimer);
+        dispatch_release(rollingTimer);
+        rollingTimer = NULL;
+    }
+#if defined (__OBJC__GC__)
+    [super finalize];
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -606,7 +633,7 @@
 		rollingTimer = NULL;
 	}
 	
-	if (currentLogFileInfo == nil)
+	if (currentLogFileInfo == nil || rollingFrequency <= 0.0)
 	{
 		return;
 	}
@@ -697,7 +724,7 @@
 
 - (void)maybeRollLogFileDueToAge
 {
-	if (currentLogFileInfo.age >= rollingFrequency)
+	if (rollingFrequency > 0.0 && currentLogFileInfo.age >= rollingFrequency)
 	{
 		NSLogVerbose(@"DDFileLogger: Rolling log file due to age...");
 		
@@ -714,16 +741,19 @@
 	// This method is called from logMessage.
 	// Keep it FAST.
 	
-	unsigned long long fileSize = [currentLogFileHandle offsetInFile];
-	
 	// Note: Use direct access to maximumFileSize variable.
 	// We specifically wrote our own getter/setter method to allow us to do this (for performance reasons).
 	
-	if (fileSize >= maximumFileSize) // YES, we are using direct access. Read note above.
+	if (maximumFileSize > 0)
 	{
-		NSLogVerbose(@"DDFileLogger: Rolling log file due to size...");
+		unsigned long long fileSize = [currentLogFileHandle offsetInFile];
 		
-		[self rollLogFileNow];
+		if (fileSize >= maximumFileSize)
+		{
+			NSLogVerbose(@"DDFileLogger: Rolling log file due to size (%qu)...", fileSize);
+			
+			[self rollLogFileNow];
+		}
 	}
 }
 
@@ -756,12 +786,12 @@
 				useExistingLogFile = NO;
 				shouldArchiveMostRecent = NO;
 			}
-			else if (mostRecentLogFileInfo.fileSize >= maximumFileSize)
+			else if (maximumFileSize > 0 && mostRecentLogFileInfo.fileSize >= maximumFileSize)
 			{
 				useExistingLogFile = NO;
 				shouldArchiveMostRecent = YES;
 			}
-			else if (mostRecentLogFileInfo.age >= rollingFrequency)
+			else if (rollingFrequency > 0.0 && mostRecentLogFileInfo.age >= rollingFrequency)
 			{
 				useExistingLogFile = NO;
 				shouldArchiveMostRecent = YES;

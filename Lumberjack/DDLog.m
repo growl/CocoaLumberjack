@@ -18,8 +18,12 @@
  * 
 **/
 
-#if ! __has_feature(objc_arc)
-#warning This file must be compiled with ARC. Use -fobjc-arc flag (or convert project to ARC).
+#if !__has_feature(objc_arc) && !defined(__OBJC_GC__)
+#   if defined (__i386__)
+#       warning This file must be compiled with GC. Use the -fobjc-gc flag.
+#   else
+#       warning This file must be compiled with ARC. Use the -fobjc-arc flag (or convert project to ARC).
+#   endif
 #endif
 
 // We probably shouldn't be using DDLog() statements within the DDLog implementation.
@@ -751,11 +755,18 @@ NSString *DDExtractFileNameWithoutExtension(const char *filePath, BOOL copy)
 	return [[DDLoggerNode alloc] initWithLogger:logger loggerQueue:loggerQueue];
 }
 
+#if defined (__OBJC__GC__)
+- (void)finalize
+#else
 - (void)dealloc
+#endif
 {
 	if (loggerQueue) {
 		dispatch_release(loggerQueue);
 	}
+#if defined (__OBJC__GC__)
+    [super finalize];
+#endif
 }
 
 @end
@@ -806,39 +817,34 @@ NSString *DDExtractFileNameWithoutExtension(const char *filePath, BOOL copy)
 
 - (NSString *)threadID
 {
-	if (threadID == nil)
-	{
-		threadID = [[NSString alloc] initWithFormat:@"%x", machThreadID];
-	}
-	
-	return threadID;
+	return [[NSString alloc] initWithFormat:@"%x", machThreadID];
 }
 
 - (NSString *)fileName
 {
-	if (fileName == nil && file != NULL)
-	{
-		fileName = DDExtractFileNameWithoutExtension(file, NO);
-	}
-	
-	return fileName;
+	return DDExtractFileNameWithoutExtension(file, NO);
 }
 
 - (NSString *)methodName
 {
-	if (methodName == nil && function != NULL)
-	{
-		methodName = [[NSString alloc] initWithUTF8String:function];
-	}
-	
-	return methodName;
+	if (function == NULL)
+		return nil;
+	else
+		return [[NSString alloc] initWithUTF8String:function];
 }
 
+#if defined (__OBJC__GC__)
+- (void)finalize
+#else
 - (void)dealloc
+#endif
 {
-	if (queueLabel != NULL) {
-		free(queueLabel);
-	}
+    if (queueLabel != NULL) {
+        free(queueLabel);
+    }
+#if defined (__OBJC__GC__)
+    [super finalize];
+#endif
 }
 
 @end
@@ -864,9 +870,16 @@ NSString *DDExtractFileNameWithoutExtension(const char *filePath, BOOL copy)
 	return self;
 }
 
+#if defined (__OBJC__GC__)
+- (void)finalize
+#else
 - (void)dealloc
+#endif
 {
 	if (loggerQueue) dispatch_release(loggerQueue);
+#if defined (__OBJC__GC__)
+    [super finalize];
+#endif
 }
 
 - (void)logMessage:(DDLogMessage *)logMessage

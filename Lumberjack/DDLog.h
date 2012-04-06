@@ -240,7 +240,7 @@ NSString *DDExtractFileNameWithoutExtension(const char *filePath, BOOL copy);
    function:(const char *)function
        line:(int)line
         tag:(id)tag
-     format:(NSString *)format, ...;
+     format:(NSString *)format, ... __attribute__ ((format (__NSString__, 9, 10)));
 
 /**
  * Since logging can be asynchronous, there may be times when you want to flush the logs.
@@ -260,6 +260,9 @@ NSString *DDExtractFileNameWithoutExtension(const char *filePath, BOOL copy);
 + (void)removeLogger:(id <DDLogger>)logger;
 
 + (void)removeAllLoggers;
+
++ (void)queueLogMessage:(DDLogMessage *)logMessage asynchronously:(BOOL)asyncFlag;
+
 
 /**
  * Registered Dynamic Logging
@@ -425,24 +428,17 @@ NSString *DDExtractFileNameWithoutExtension(const char *filePath, BOOL copy);
     char *queueLabel;
 	NSString *threadName;
 	id tag; // For 3rd party extensions to the framework, where flags and contexts aren't enough.
-
-// The private variables below are only calculated if needed.
-// You should use the public methods to access this information.
-	
-@private
-	NSString *threadID;
-	NSString *fileName;
-	NSString *methodName;
 }
 
-// The initializer is somewhat reserved for internal use.
-// However, if you find need to manually create logMessage objects,
-// there is one thing you should be aware of.
-// The initializer expects the file and function parameters to be string literals.
-// That is, it expects the given strings to exist for the duration of the object's lifetime,
-// and it expects the given strings to be immutable.
-// In other words, it does not copy these strings, it simply points to them.
-
+/**
+ * The initializer is somewhat reserved for internal use.
+ * However, if you find need to manually create logMessage objects, there is one thing you should be aware of:
+ * 
+ * The initializer expects the file and function parameters to be string literals.
+ * That is, it expects the given strings to exist for the duration of the object's lifetime,
+ * and it expects the given strings to be immutable.
+ * In other words, it does not copy these strings, it simply points to them.
+**/
 - (id)initWithLogMsg:(NSString *)logMsg
                level:(int)logLevel
                 flag:(int)logFlag
@@ -459,7 +455,7 @@ NSString *DDExtractFileNameWithoutExtension(const char *filePath, BOOL copy);
 - (NSString *)threadID;
 
 /**
- * Convenience method to get just the file name, as the file variable is generally the full file path.
+ * Convenience property to get just the file name, as the file variable is generally the full file path.
  * This method does not include the file extension, which is generally unwanted for logging purposes.
 **/
 - (NSString *)fileName;
